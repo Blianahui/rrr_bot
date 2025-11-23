@@ -31,7 +31,14 @@ def fetch_offers_for_part(part_number: str):
     Возвращает список словарей: [{ 'title': ..., 'price': ..., 'url': ..., 'part_number': ... }, ...]
     """
     url = SEARCH_URL_TEMPLATE.format(part_number=part_number)
-    resp = requests.get(url, timeout=15)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    resp = requests.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -62,7 +69,7 @@ def fetch_offers_for_part(part_number: str):
             if a_code:
                 code_text = a_code.get_text(strip=True)
 
-        # цена (без доставки, только основная цена)
+        # цена
         price_tag = item.find("strong", attrs={"data-testid": "product-price"})
         if not price_tag:
             continue
@@ -95,6 +102,7 @@ def fetch_offers_for_part(part_number: str):
         )
 
     return offers
+
 
 
 async def send_message(app, text: str):
@@ -183,3 +191,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
