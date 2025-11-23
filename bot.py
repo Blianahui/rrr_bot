@@ -1,6 +1,7 @@
 import os
 import asyncio
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
 from aiohttp import web
@@ -34,19 +35,36 @@ def fetch_offers_for_part(part_number: str):
     """
     url = SEARCH_URL_TEMPLATE.format(part_number=part_number)
 
+    # используем cloudscraper вместо requests
+    scraper = cloudscraper.create_scraper(
+        browser={
+            "browser": "chrome",
+            "platform": "windows",
+            "mobile": False
+        }
+    )
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;"
+            "q=0.9,image/avif,image/webp,*/*;q=0.8"
+        ),
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://rrr.lt/ru/poisk",
     }
 
-    resp = requests.get(url, headers=headers, timeout=15)
-    resp.raise_for_status()
+    resp = scraper.get(url, headers=headers, timeout=20)
+    resp.raise_for_status()  # если всё равно 403, прилетит тут
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    html = resp.text
+    soup = BeautifulSoup(html, "html.parser")
     offers = []
 
-    # все карточки товаров
     items = soup.find_all("div", class_="products__items", attrs={"data-testid": "product-card"})
     for item in items:
         # ссылка на товар
@@ -63,7 +81,7 @@ def fetch_offers_for_part(part_number: str):
         title_tag = item.find("span", class_="products__text__header", attrs={"data-testid": "product-header"})
         title = title_tag.get_text(strip=True) if title_tag else f"Товар {part_number}"
 
-        # код детали (для информации)
+        # код детали
         code_tag = item.find("p", class_="products__code")
         code_text = ""
         if code_tag:
@@ -77,7 +95,6 @@ def fetch_offers_for_part(part_number: str):
             continue
         price_text = price_tag.get_text(strip=True)
 
-        # вытаскиваем число
         price_val = None
         tmp = ""
         for ch in price_text:
@@ -104,6 +121,7 @@ def fetch_offers_for_part(part_number: str):
         )
 
     return offers
+
 
 
 async def send_message(app, text: str):
@@ -222,3 +240,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
