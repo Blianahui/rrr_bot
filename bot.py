@@ -3,6 +3,8 @@ import asyncio
 import requests
 from bs4 import BeautifulSoup
 
+from aiohttp import web
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -104,7 +106,6 @@ def fetch_offers_for_part(part_number: str):
     return offers
 
 
-
 async def send_message(app, text: str):
     chat_id_int = int(CHAT_ID)
     await app.bot.send_message(chat_id=chat_id_int, text=text, disable_web_page_preview=False)
@@ -113,7 +114,7 @@ async def send_message(app, text: str):
 async def checker_loop(app):
     global notified_items
 
-    # ждём чуть-чуть, чтобы приложение нормально поднялось
+    # чуть подождём, чтобы всё поднялось
     await asyncio.sleep(5)
 
     while True:
@@ -169,26 +170,55 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def main():
+# ==== МАЛЕНЬКИЙ HTTP-СЕРВЕР ДЛЯ RENDER ====
+
+async def handle_root(request):
+    return web.Response(text="Bot is running.\n")
+
+
+async def run_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_root)
+
+    port = int(os.environ.get("PORT", "10000"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+
+async def main_async():
     if not TELEGRAM_TOKEN:
         raise RuntimeError("Не задан TELEGRAM_TOKEN в переменных окружения")
     if not CHAT_ID:
         raise RuntimeError("Не задан CHAT_ID в переменных окружения")
 
+    # Создаём Telegram-приложение
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status_command))
 
-    async def on_startup(app):
-        asyncio.create_task(checker_loop(app))
+    # Поднимаем web-сервер и бота параллельно
+    async with application:
+        # стартуем фоновый чекер
+        asyncio.create_task(checker_loop(application))
 
-    application.post_init = on_startup
+        # стартуем HTTP-сервер
+        asyncio.create_task(run_web_server())
 
-    application.run_polling()
+        # запускаем polling (блокирующий внутри, но мы в async-контексте)
+        await application.start()
+        print("Bot started")
+        await application.updater.start_polling()
+        # держим приложение живым
+        await asyncio.Event().wait()
+
+
+def main():
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
     main()
-
